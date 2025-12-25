@@ -1,0 +1,164 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/* ===========================
+   ENUMS
+=========================== */
+
+enum AccountStatus {
+  ACTIVE
+  DISABLED
+  SUSPENDED
+}
+
+enum AuthProvider {
+  LOCAL
+  GOOGLE
+  GITHUB
+}
+
+enum VerificationType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
+enum SecurityEventType {
+  LOGIN_SUCCESS
+  LOGIN_FAILED
+  PASSWORD_CHANGED
+  EMAIL_CHANGED
+  ACCOUNT_LOCKED
+  ACCOUNT_DISABLED
+  SESSION_REVOKED
+  SUSPICIOUS_ACTIVITY
+}
+
+enum SessionType {
+  WEB
+  API
+  MOBILE
+}
+
+/* ===========================
+   USER MODEL
+=========================== */
+
+model User {
+  id               String   @id @default(uuid())
+  username         String   @unique
+  display_name     String?
+  email            String   @unique
+
+  email_verified   Boolean  @default(false)
+  account_status   AccountStatus @default(DISABLED)
+
+  failed_login_attempts Int      @default(0)
+  locked_until          DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  // Relations
+  credentials        Credentials[]
+  sessions           Session[]
+  verificationTokens VerificationToken[]
+  securityEvents     SecurityEvent[]
+
+  @@index([email])
+  @@index([account_status])
+}
+
+/* ===========================
+   AUTH CREDENTIALS
+=========================== */
+
+model Credentials {
+  id               String   @id @default(uuid())
+  user_id          String
+  provider         AuthProvider
+
+  provider_user_id String?
+  password_hash    String?
+
+  is_active        Boolean   @default(true)
+  last_login_at    DateTime?
+  created_at       DateTime  @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([user_id, provider])
+  sessions Session[]
+}
+
+/* ===========================
+   SESSIONS
+=========================== */
+
+model Session {
+  id            String   @id @default(uuid())
+  user_id       String
+  credential_id String
+
+  session_token String   @unique
+  session_type  SessionType @default(WEB)
+
+  ip_address    String?
+  user_agent    String?
+
+  expires_at    DateTime
+  revoked_at    DateTime?
+  created_at    DateTime @default(now())
+
+  user       User        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+  credential Credentials @relation(fields: [credential_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@index([expires_at])
+}
+
+/* ===========================
+   VERIFICATION TOKENS
+=========================== */
+
+model VerificationToken {
+  id         String           @id @default(uuid())
+  user_id    String
+  type       VerificationType
+
+  token_hash String
+  expires_at DateTime
+  used_at    DateTime?
+
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id, type])
+}
+
+/* ===========================
+   SECURITY EVENTS / AUDIT LOG
+=========================== */
+
+model SecurityEvent {
+  id         String            @id @default(uuid())
+  user_id    String?
+  event_type SecurityEventType
+
+  ip_address String?
+  user_agent String?
+  metadata   Json?
+
+  created_at DateTime @default(now())
+
+  user User? @relation(fields: [user_id], references: [id], onDelete: SetNull)
+
+  @@index([user_id])
+  @@index([event_type])
+}
